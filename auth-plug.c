@@ -44,6 +44,7 @@
 # define MOSQ_DENY_ACL	MOSQ_ERR_ACL_DENIED
 #endif
 
+
 #include "log.h"
 #include "hash.h"
 #include "backends.h"
@@ -62,8 +63,13 @@
 #include "be-mongo.h"
 #include "be-files.h"
 
+//Cigdem: ACE
+#include "be-ace.h"
+
+
 #include "userdata.h"
 #include "cache.h"
+
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -409,6 +415,25 @@ int mosquitto_auth_plugin_init(void **userdata, struct mosquitto_auth_opt *auth_
 		}
 #endif
 
+#if BE_ACE
+		if(!strcmp(q, "ace")){
+			*bep = (struct backend_p *)malloc(sizeof(struct backend_p));
+			memset(*bep, 0, sizeof(struct backend_p));
+			(*bep)->name = strdup("ace");
+			(*bep)->conf = be_ace_init(); 
+		        if ((*bep)->conf == NULL){
+				_fatal("%s init returns NULL", q); 
+			}
+			(*bep)->kill = be_ace_destroy;
+			(*bep)->getuser = be_ace_getuser;
+			(*bep)->superuser = be_ace_superuser;
+			(*bep)->aclcheck = be_ace_aclcheck;
+			found = 1; 
+			PSKSETUP;		
+		} 
+#endif
+
+	
 #if BE_FILES
 		if (!strcmp(q, "files")) {
 			*bep = (struct backend_p *)malloc(sizeof(struct backend_p));
@@ -602,17 +627,21 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		access == MOSQ_ACL_READ ? "MOSQ_ACL_READ" : "MOSQ_ACL_WRITE" );
 
 
-	granted = acl_cache_q(clientid, username, topic, access, userdata);
+	//Bypass ACL check if ACE - change to if b->name == ace
+	#ifndef BE_ACE
+	granted = cache_q(clientid, username, topic, access, userdata);
 	if (granted != MOSQ_ERR_UNKNOWN) {
 		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) CACHEDAUTH: %d",
 			username, topic, access, granted);
 		return (granted);
 	}
+	#endif
 
 	if (!username || !*username || !topic || !*topic) {
 		granted =  MOSQ_DENY_ACL;
 		goto outout;
 	}
+	
 
 
 	/* Check for usernames exempt from ACL checking, first */
@@ -669,6 +698,11 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) HAS_ERROR=Y by %s",
 				username, topic, access, b->name);
 			has_error = TRUE;
+		} else if (match == 0){ //Cigdem: Adding the option of no backend error, but aclcheck fails
+			backend_name = b->name;
+			authorized = FALSE; 
+			_log(LOG_DEBUG, "aclcheck(%s, %s, %d) acl fail with %s",
+                                username, topic, access, b->name);
 		}
 	}
 
@@ -676,16 +710,20 @@ int mosquitto_auth_acl_check(void *userdata, const char *clientid, const char *u
 		username, topic, access, authorized, (backend_name) ? backend_name : "none");
 
 	granted = (authorized) ?  MOSQ_ERR_SUCCESS : MOSQ_DENY_ACL;
-
-   outout:	/* goto fail goto fail */
-
-	if (granted == MOSQ_DENY_ACL && has_error) {
+	if (granted == MOSQ_DENY_ACL){ //Cigdem: Adding the option of returning MOSQ_ERR_ACL_DENIED
+	   if(has_error) {
 		_log(LOG_DEBUG, "aclcheck(%s, %s, %d) AUTHORIZED=N HAS_ERROR=Y => ERR_UNKNOWN",
 			username, topic, access);
 		granted = MOSQ_ERR_UNKNOWN;
+	   } else {
+		granted = MOSQ_ERR_ACL_DENIED;
+	   }
 	}
 
-	acl_cache(clientid, username, topic, access, granted, userdata);
+   outout:	/* goto fail goto fail */
+	#ifndef BE_ACE
+		acl_cache(clientid, username, topic, access, granted, userdata);
+	#endif
 	return (granted);
 
 }

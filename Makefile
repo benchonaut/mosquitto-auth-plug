@@ -6,7 +6,7 @@ BE_CFLAGS =
 BE_LDFLAGS =
 BE_LDADD =
 BE_DEPS =
-OBJS = auth-plug.o base64.o pbkdf2-check.o log.o envs.o hash.o be-psk.o backends.o cache.o
+OBJS = auth-plug.o base64.o pbkdf2-check.o log.o envs.o hash.o be-psk.o backends.o cache.o token-cache.o
 
 BACKENDS =
 BACKENDSTR =
@@ -108,6 +108,15 @@ ifneq ($(BACKEND_MONGO), no)
 	OBJS += be-mongo.o
 endif
 
+#Cigdem: Added for ACE
+ifneq ($(BACKEND_ACE), no)
+	BACKENDS += -DBE_ACE
+	BACKENDSTR += ACE
+	
+	BE_LDADD += -lcurl
+	OBJS += be-ace.o nxjson.o
+endif
+ 
 ifneq ($(BACKEND_FILES), no)
 	BACKENDS+= -DBE_FILES
 	BACKENDSTR += Files
@@ -124,7 +133,7 @@ ifneq ($(SUPPORT_DJANGO_HASHERS), no)
 endif
 
 OSSLINC = -I$(OPENSSLDIR)/include
-OSSLIBS = -L$(OPENSSLDIR)/lib -lcrypto
+OSSLIBS = -L$(OPENSSLDIR)/lib -lssl -lcrypto
 
 CFLAGS := $(CFG_CFLAGS)
 CFLAGS += -I$(MOSQUITTO_SRC)/src/
@@ -157,7 +166,7 @@ printconfig:
 
 
 auth-plug.so : $(OBJS) $(BE_DEPS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -fPIC -shared -o $@ $(OBJS) $(BE_DEPS) $(LDADD)
+	$(CC) $(CFLAGS) $(LDFLAGS) -fPIC -shared -undefined dynamic_lookup -o $@ $(OBJS) $(BE_DEPS) $(LDADD)
 
 be-redis.o: be-redis.c be-redis.h log.h hash.h envs.h Makefile
 be-memcached.o: be-memcached.c be-memcached.h log.h hash.h envs.h Makefile
@@ -178,8 +187,10 @@ cache.o: cache.c cache.h uthash.h Makefile
 be-http.o: be-http.c be-http.h Makefile backends.h
 be-jwt.o: be-jwt.c be-jwt.h Makefile backends.h
 be-mongo.o: be-mongo.c be-mongo.h Makefile
+#cigdem
+token-cache.o: token-cache.h token-cache.c uthash.h Makefile
+be-ace.o: be-ace.c be-ace.h Makefile backends.h nxjson.h nxjson.c token-cache.h token-cache.c
 be-files.o: be-files.c be-files.h Makefile
-
 np: np.c base64.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@ $(OSSLIBS)
 

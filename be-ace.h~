@@ -1,0 +1,42 @@
+/* 
+*
+*
+*/
+
+#include <stddef.h>
+
+#ifdef BE_ACE
+
+#define MAXPARAMSLEN    1024
+#define METHOD_GETUSER     1
+#define METHOD_SUPERUSER   2
+#define METHOD_ACLCHECK    3
+
+struct ace_backend{
+	char *ip; 
+	int port; 
+	char *hostheader; 
+	char *getuser_uri;
+	char *superuser_uri;
+	char *aclcheck_uri;
+
+	//Do we need all of these?
+	char *getuser_envs;
+	char *superuser_envs;
+	char *aclcheck_envs;
+	char *with_tls;
+	char *basic_auth;
+	int retry_count;
+};
+
+
+//Think about renaming the parameters
+void *be_ace_init();
+void be_ace_destroy(void *conf); 
+char *be_ace_getuser(void *conf, const char *username, const char *password, int *authenticated); 
+int be_ace_superuser(void *conf, const char *username); 
+int be_ace_aclcheck(void *conf, const char *clientid, const char *username, const char *topic, int acc); 
+
+size_t write_callback(char *ptr, size_t size, size_t nmemb, void *userdata); 
+
+#endif
